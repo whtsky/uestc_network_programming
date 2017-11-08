@@ -48,7 +48,8 @@ int main(int argc, char *argv[]) {
 		int len = 0, maxlen = 100;
 		char buffer[maxlen];
 
-		while ((n = recv(sock, buffer, maxlen, 0)) > 0) {
+		while ((n = recv(sock, buffer, maxlen - 1, 0)) > 0) {
+      buffer[n] = '\0';
 			printf("received: '%s'\n", buffer);
 			send(sock, buffer, n, 0);
 		}

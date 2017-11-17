@@ -1,5 +1,7 @@
 {
     "files.associations": {
-        "in.h": "c"
+        "in.h": "c",
+        "timelib.h": "c",
+        "unp.h": "c"
     }
 }

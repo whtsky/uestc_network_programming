@@ -3,6 +3,7 @@
         "in.h": "c",
         "timelib.h": "c",
         "unp.h": "c",
-        "stdlib.h": "c"
+        "stdlib.h": "c",
+        "pthread.h": "c"
     }
 }

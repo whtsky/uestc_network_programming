@@ -1,11 +1,20 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <string.h>
+#include <pthread.h>
+#include "timelib.h"
+
+void thread_runner(int connfd) {
+  pthread_detach(pthread_self());
+  print_time(connfd);
+  close(connfd);
+}
 
 int main(int argc, char *argv[]) {
-
   if (argc < 2) {
     fprintf(stderr, "Usage: %s <port>\n", argv[0]);
     return -1;
@@ -38,25 +47,15 @@ int main(int argc, char *argv[]) {
 	socklen_t client_address_len = 0;
 
 	while (1) {
+    pthread_t tid;
 		int sock = accept(listen_sock, (struct sockaddr *)&client_address, &client_address_len);
 		if (sock < 0) {
 			fprintf(stderr, "could not open a socket to accept data\n");
 			return -1;
 		}
-
-		int n = 0;
-		int len = 0, maxlen = 100;
-		char buffer[maxlen];
-
-		while ((n = recv(sock, buffer, maxlen - 1, 0)) > 0) {
-      buffer[n] = '\0';
-			printf("received: '%s'\n", buffer);
-			send(sock, buffer, n, 0);
-		}
-
-		close(sock);
+    pthread_create(&tid, NULL, (void *(*)(void *))thread_runner, (void *)sock);
 	}
 
 	close(listen_sock);
-	return 0;
+  return 0;
 }

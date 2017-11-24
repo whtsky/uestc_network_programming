@@ -2,6 +2,7 @@
     "files.associations": {
         "in.h": "c",
         "timelib.h": "c",
-        "unp.h": "c"
+        "unp.h": "c",
+        "stdlib.h": "c"
     }
 }

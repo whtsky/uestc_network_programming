@@ -6,6 +6,8 @@
 #include <sys/select.h>
 #include <unistd.h>
 
+#include "error.h"
+
 #define MAXLINE 4096
 #define LISTENQ 1024
 
@@ -25,6 +27,9 @@ int main(int argc, char *argv[]) {
   struct sockaddr_in cliaddr, servaddr;
 
   listenfd = socket(AF_INET, SOCK_STREAM, 0);
+  if (listenfd < 0) {
+    error("can't open socket\n");
+  }
 
   bzero(&servaddr, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
@@ -45,6 +50,9 @@ int main(int argc, char *argv[]) {
   for (;;) {
     rset = allset;
     nready = select(maxfd + 1, &rset, NULL, NULL, NULL);
+    if (nready < 0) {
+      error("select error");
+    }
 
     if (FD_ISSET(listenfd, &rset)) { /* new client connection */
       clilen = sizeof(cliaddr);
@@ -85,4 +93,5 @@ int main(int argc, char *argv[]) {
       }
     }
   }
+  return EXIT_SUCCESS;
 }

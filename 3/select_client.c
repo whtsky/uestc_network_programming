@@ -1,55 +1,98 @@
-#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/errno.h>
+#include <sys/select.h>
 #include <sys/socket.h>
-#include <unistd.h>
+#include <sys/types.h>
 
-static int BUFFER_SIZE = 100;
+#define PORT 9999
+#define BACKLOG 5
+#define MAX_BUF_SIZE 100
 
-int main(int argc, char *argv[]) {
-  if (argc < 3) {
-    fprintf(stderr, "Usage: %s <server> <port>\n", argv[0]);
-    return -1;
+/* MACROS */
+#define MAX(a, b) (a > b ? a : b)
+
+void str_cli(FILE *fp, int sockfd) {
+
+  int n;
+  int maxfdp1;
+  int stdineof = 0;
+  fd_set fdset;
+  char sendline[MAX_BUF_SIZE], recvline[MAX_BUF_SIZE];
+
+  FD_ZERO(&fdset);
+
+  for (;;) {
+    if (stdineof == 0) {
+      FD_SET(fileno(fp), &fdset);
+    }
+    FD_SET(sockfd, &fdset);
+    maxfdp1 = MAX(fileno(fp), sockfd) + 1;
+    if (select(maxfdp1, &fdset, NULL, NULL, NULL) < 0) {
+      perror("Error select");
+    }
+    /* socket is readable */
+    if (FD_ISSET(sockfd, &fdset)) {
+      if ((n = recv(sockfd, recvline, MAX_BUF_SIZE, 0)) == 0) {
+        if (stdineof == 1) {
+          printf("server closed connection\n");
+          return; /* normal termination */
+        } else {
+          printf("server terminated prematurely\n");
+          exit(1);
+        }
+      }
+      recvline[n] = '\0';
+      fputs(recvline, stdout);
+    }
+    /* input is readable */
+    if (FD_ISSET(fileno(fp), &fdset)) {
+      if (fgets(sendline, MAX_BUF_SIZE, fp) == NULL) {
+        stdineof = 1;
+        /* send FIN on write half, client closed connection */
+        if (shutdown(sockfd, SHUT_WR) < 0) {
+          perror("Error shutdown");
+        }
+        FD_CLR(fileno(fp), &fdset);
+        continue;
+      }
+      send(sockfd, sendline, strlen(sendline), 0);
+    }
+  }
+}
+
+int main(int argc, char **argv) {
+
+  int sock_fd, cli_fd;
+  int yes = 1;
+  int num_bytes;
+  char buf[MAX_BUF_SIZE];
+  unsigned int cli_len;
+  struct sockaddr_in cli_addr, serv_addr;
+
+  if ((sock_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+    perror("Error Socket");
+    exit(1);
   }
 
-	struct sockaddr_in server_address;
-	memset(&server_address, 0, sizeof(server_address));
-	server_address.sin_family = AF_INET;
+  bzero(&serv_addr, sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_port = htons(PORT);
+  inet_pton(AF_INET, "192.168.1.77", &serv_addr.sin_addr);
 
-	inet_pton(AF_INET, argv[1], &server_address.sin_addr);
+  if (setsockopt(sock_fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) < 0) {
+    perror("Error Setsockopt");
+    exit(1);
+  }
 
-	server_address.sin_port = htons(atoi(argv[2]));
+  if (connect(sock_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    perror("Error Connect");
+    exit(1);
+  }
 
-	int sock;
-	if ((sock = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
-		fprintf(stderr, "could not create socket\n");
-		return -1;
-	}
+  str_cli(stdin, sock_fd);
 
-	if (connect(sock, (struct sockaddr*)&server_address,
-	            sizeof(server_address)) < 0) {
-		fprintf(stderr, "could not connect to server\n");
-		return -1;
-	}
-
-	int n = 0;
-	int len = 0;
-  char buffer[BUFFER_SIZE];
-  
-	while (1) {
-    printf("Send >");
-    fgets(buffer, BUFFER_SIZE, stdin);
-    buffer[strlen(buffer) - 1] = '\0';  // remove \n
-    send(sock, buffer, strlen(buffer), 0);
-
-    n = recv(sock, buffer, BUFFER_SIZE, 0);
-    if (n <= 0) {
-      break;
-    }
-		printf("received: '%s'\n", buffer);
-	}
-
-	close(sock);
-	return 0;
+  return 0;
 }

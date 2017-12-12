@@ -24,17 +24,14 @@ int main(int argc, char **argv) {
 
   Listen(listenfd, LISTENQ);
 
-  maxfd = listenfd; /* initialize */
-  maxi = -1;        /* index into client[] array */
+  maxfd = listenfd;
+  maxi = -1;
   for (i = 0; i < FD_SETSIZE; i++)
-    client[i] = -1; /* -1 indicates available entry */
+    client[i] = -1;
   FD_ZERO(&allset);
   FD_SET(listenfd, &allset);
-  /* end fig01 */
-
-  /* include fig02 */
   for (;;) {
-    rset = allset; /* structure assignment */
+    rset = allset;
     nready = Select(maxfd + 1, &rset, NULL, NULL, NULL);
 
     if (FD_ISSET(listenfd, &rset)) { /* new client connection */

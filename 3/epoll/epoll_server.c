@@ -8,6 +8,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <errno.h>
 
 #define MAX_EVENTS 20
 #define MAXLINE 4096
@@ -45,7 +46,7 @@ int main(int argc, char *argv[]) {
   int epfd = epoll_create(256);
   int listenfd = socket(AF_INET, SOCK_STREAM, 0);
   ev.data.ptr = create_client_data(listenfd);
-  ev.events = EPOLLIN;
+  ev.events = EPOLLIN | EPOLLET;
   struct sockaddr_in servaddr;
   epoll_ctl(epfd, EPOLL_CTL_ADD, listenfd, &ev);
   bzero(&servaddr, sizeof(servaddr));
@@ -62,52 +63,81 @@ int main(int argc, char *argv[]) {
       if (fd == listenfd) {
         struct sockaddr in_addr;
         socklen_t in_len = sizeof(in_addr);
-        int connfd = accept(listenfd, &in_addr, &in_len);
-        ev.data.ptr = create_client_data(connfd);
-        ev.events = EPOLLIN | EPOLLET;
-        epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev);
+        int connfd;
+        while ((connfd = accept(listenfd, &in_addr, &in_len)) > 0) {
+          ev.data.ptr = create_client_data(connfd);
+          ev.events = EPOLLIN | EPOLLET;
+          epoll_ctl(epfd, EPOLL_CTL_ADD, connfd, &ev);
+        }
+        if (connfd == -1 && errno != EAGAIN && errno != ECONNABORTED && errno != EPROTO && errno != EINTR) {
+          perror("accept");
+        }
       } else if (events[i].events & EPOLLIN) {
         int n;
-        if ((n = read(fd, buf, MAXLINE)) == 0) {
+        while ((n = read(fd, buf, MAXLINE)) != 0) {
+          int wrote = write(fd, buf, n);
+          if (wrote < n) {
+            if (wrote == -1 && errno != EAGAIN && errno != EINTR) {
+              exit(EXIT_FAILURE);
+              continue;
+            }
+            int unwrite_size = n - wrote;
+            if (data->data_size > 0) {
+              // already has unsent data, create a bigger buf
+              size_t new_size = unwrite_size + data->data_size;
+              char *newbuf = malloc(new_size);
+              strncpy(newbuf, data->data, data->data_size);
+              strncpy(newbuf + data->data_size, buf + wrote, unwrite_size);
+              free(data->data);
+              data->data = newbuf;
+              data->data_size = new_size;
+            } else {
+              data->data = malloc(unwrite_size);
+              strncpy(data->data, buf + wrote, unwrite_size);
+              data->data_size = unwrite_size;
+              ev.data.ptr = data;
+              ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+              epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
+            }
+          }
+        }
+        if (n == -1 && errno != EAGAIN && errno != EINTR) {
+          perror("read error");
+        } else if (n == 0) {
           if (data->data != NULL) {
             free(data->data);
           }
           free(data);
           close(fd);
           epoll_ctl(epfd, EPOLL_CTL_DEL, fd, NULL);
-        } else {
-          int wrote = write(fd, buf, n);
-          if (wrote <= 0) {
-            if (data->data_size > 0) {
-              // already has unsent data, create a bigger buf
-              int new_size = n + data->data_size;
-              char *newbuf = malloc(new_size);
-              strncpy(newbuf, data->data, data->data_size);
-              strncpy(newbuf + data->data_size, buf, n);
-              free(data->data);
-              data->data = newbuf;
-              data->data_size = new_size;
-            } else {
-              data->data = malloc(n);
-              strncpy(data->data, buf, n);
-              data->data_size = n;
-              ev.data.ptr = data;
-              ev.events = EPOLLOUT | EPOLLET;
-              epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
-            }
-          }
         }
       } else if (events[i].events & EPOLLOUT) {
         client_data *data = events[i].data.ptr;
         if (data->data != NULL) {
-          write(fd, data->data, data->data_size);
-          free(data->data);
-          data->data = NULL;
-          data->data_size = 0;
+          int n = write(fd, data->data, data->data_size);
+          if (n <= 0) {
+            if (errno != EAGAIN && errno != EINTR) {
+              printf("EPOLLOUT");
+              perror("write error");
+              exit(EXIT_FAILURE);
+            }
+          } else if (n < data->data_size) {
+            // resize buf data
+            size_t new_size = data->data_size - n;
+            char *new_buf = malloc(new_size);
+            strncpy(new_buf, data->data + n, new_size);
+            data->data_size = new_size;
+            free(data->data);
+            data->data = new_buf;
+          } else {
+            free(data->data);
+            data->data = NULL;
+            data->data_size = 0;
+            ev.data.ptr = data;
+            ev.events = EPOLLIN | EPOLLET;
+            epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
+          }
         }
-        ev.data.ptr = data;
-        ev.events = EPOLLIN;
-        epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
       }
     }
   }

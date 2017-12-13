@@ -1,4 +1,4 @@
-all: epoll_server
+all: epoll_server epoll_client
 
 .PHONY : clean
 clean :

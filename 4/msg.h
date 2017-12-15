@@ -9,9 +9,11 @@ enum MESSAGE_TYPE {
     LOGIN_MESSAGE,
     TEXT_MESSAGE,
     QUIT_MESSAGE,
+    PING_MESSAGE
 };
 
 typedef struct {
+    size_t length;    
     short type;
 } Message;
 
@@ -22,7 +24,6 @@ typedef struct {
 
 typedef struct {
     Message msg;
-    size_t length;
     char from[USERNAME_LENGTH];
     char *content;
 } TextMessage;

@@ -56,3 +56,6 @@ Mkfile.old
 dkms.conf
 
 # End of https://www.gitignore.io/api/c
+
+cmake-build-debug
+.idea/
